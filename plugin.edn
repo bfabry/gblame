@@ -1,0 +1,5 @@
+{:name "gblame"
+ :author "Beau Fabry"
+ :source "src"
+ :desc "Simple implementation of git blame for light table. Assumes you have git installed"
+ :behaviors "gblame.behaviors"}
