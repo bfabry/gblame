@@ -4,6 +4,7 @@
             [lt.util.dom :as dom]
             [lt.objs.editor :as editor]
             [lt.objs.proc :as proc]
+            [lt.objs.notifos :as notifos]
             [lt.objs.editor.pool :as pool])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
@@ -87,15 +88,17 @@
       (.end stream))))
 
 (defn run-git-blame-on-path-and-content [path content return-obj]
+  (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
   (let [child-proc (exec (str "git blame --date short --contents - " path)
                          (clj->js {"cwd" (lt.objs.files/parent path)})
-                           (fn [err stdout stderr]
-                             (if err
-                               (object/raise return-obj :proc.error err stdout stderr)
-                               (object/raise return-obj :proc.exit stdout stderr))))
+                         (fn [err stdout stderr]
+                           (if err
+                             (object/raise return-obj :proc.error err stdout stderr)
+                             (object/raise return-obj :proc.exit stdout stderr))))
         proc-input (.-stdin child-proc)
         chunked (partition-all 100 content)]
-    (write-with-nodejs true chunked proc-input)))
+    (write-with-nodejs true chunked proc-input))
+  (notifos/done-working))
 
