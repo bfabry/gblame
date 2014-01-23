@@ -56,7 +56,7 @@
                             gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
                             git-lines (clojure.string/split-lines data)]
                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
-                        (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" "300px"})
+                        (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
                         (doall (map-indexed (fn [idx git-line]
                                               (.setGutterMarker (editor/->cm-ed this)
                                                                 idx
