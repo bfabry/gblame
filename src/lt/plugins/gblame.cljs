@@ -41,19 +41,20 @@
               :exec (fn []
                       (object/raise (pool/last-active) ::remove-git-blame))})
 
-(object/tag-behaviors ::receiving-blame-output #{::buffer-output-from-git-blame ::on-proc-exit-add-git-blame})
-(behavior ::buffer-output-from-git-blame
-          :triggers #{:proc.out}
-          :reaction (fn [this data]
-                      (object/update! this [::git-blame-output] str (.toString data))))
+(object/tag-behaviors ::receiving-blame-output #{::log-errors ::on-proc-exit-add-git-blame})
+
+(behavior ::log-errors
+          :triggers #{:proc.error}
+          :reaction (fn [this & args]
+                      (.log js/console (clj->js args))))
 
 (behavior ::on-proc-exit-add-git-blame
           :triggers #{:proc.exit}
-          :reaction (fn [this]
+          :reaction (fn [this data]
                       (object/remove-tags this #{::receiving-blame-output})
                       (let [current-gutters (set (js->clj (editor/option this "gutters")))
                             gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
-                            git-lines (clojure.string/split-lines (::git-blame-output @this))]
+                            git-lines (clojure.string/split-lines data)]
                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
                         (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" "300px"})
                         (doall (map-indexed (fn [idx git-line]
@@ -86,8 +87,15 @@
 
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (object/merge! return-obj {::git-blame-output ""})
-  (let [proc (proc/simple-spawn* return-obj {:command "git" :args ["blame" "--date" "short" "--contents" "-" path]})
-        proc-input (.-stdin proc)
+  (object/add-tags return-obj #{::receiving-blame-output})
+  (let [exec (.-exec (js/require "child_process"))
+        child-proc (exec (str "git blame --date short --contents - " path)
+                         (clj->js {"cwd" (lt.objs.files/parent path)})
+                           (fn [err stdout stderr]
+                             (if err
+                               (object/raise return-obj :proc.error err stdout stderr)
+                               (object/raise return-obj :proc.exit stdout stderr))))
+        proc-input (.-stdin child-proc)
         chunked (partition-all 100 content)]
-    (object/add-tags return-obj #{::receiving-blame-output})
     (write-with-nodejs true chunked proc-input)))
+
