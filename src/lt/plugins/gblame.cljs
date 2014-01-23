@@ -7,6 +7,7 @@
             [lt.objs.editor.pool :as pool])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
+(def exec (.-exec (js/require "child_process")))
 (declare write-with-nodejs)
 (declare run-git-blame-on-path-and-content)
 
@@ -88,8 +89,7 @@
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
-  (let [exec (.-exec (js/require "child_process"))
-        child-proc (exec (str "git blame --date short --contents - " path)
+  (let [child-proc (exec (str "git blame --date short --contents - " path)
                          (clj->js {"cwd" (lt.objs.files/parent path)})
                            (fn [err stdout stderr]
                              (if err
