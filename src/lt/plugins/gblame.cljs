@@ -109,15 +109,6 @@
                       (editor/set-options this {:gutters (clj->js (remove #{"GBlame-gutter"} (js->clj (editor/option this "gutters"))))})
                       (object/raise this :refresh!)))
 
-(defn write-with-nodejs [write-ok? chunks stream]
-  (letfn [(callback-fn []
-                       (if write-ok?
-                         (write-with-nodejs (.write stream (clojure.string/join (first chunks))) (rest chunks) stream)
-                         (.once stream 'drain' callback-fn)))]
-    (if-not (empty? chunks)
-      (callback-fn)
-      (.end stream))))
-
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
@@ -128,7 +119,6 @@
                            (if err
                              (object/raise return-obj :proc.error err stdout stderr)
                              (object/raise return-obj :proc.exit stdout stderr))))
-        proc-input (.-stdin child-proc)
-        chunked (partition-all 100 content)]
-    (write-with-nodejs true chunked proc-input)))
+        proc-input (.-stdin child-proc)]
+    (.end proc-input content)))
 
