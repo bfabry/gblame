@@ -1,1 +1,2 @@
-{:+ {:app [(:lt.objs.plugins/load-js "gblame_compiled.js" true)]}}
+{:+ {:app [(:lt.objs.plugins/load-js "gblame_compiled.js" true)
+           (:lt.objs.plugins/load-css "css/gblame.css")]}}

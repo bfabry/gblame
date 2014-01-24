@@ -5,6 +5,7 @@
             [lt.objs.editor :as editor]
             [lt.objs.proc :as proc]
             [lt.objs.notifos :as notifos]
+            [lt.objs.tabs :as tabs]
             [lt.objs.editor.pool :as pool])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
@@ -27,10 +28,17 @@
                   :reaction (fn [this new-width]
                               (object/merge! blame-settings {:width new-width})))
 
-(defui gblame-gutter-marker [git-content]
+(defn sha-from-git-string [git-string]
+  (clojure.string/replace (clojure.string/join (take 8 git-string)) "^" ""))
+
+(defui gblame-gutter-marker [this git-content]
   [:div.GBlame-gutter-marker
    {:style (str "width: " (:width @blame-settings) "px; white-space: nowrap; overflow: hidden;") }
-   (clojure.string/replace-first git-content #"\s*\d+\).*$" ")")])
+   (clojure.string/replace-first git-content #"\s*\d+\).*$" ")")]
+  :click (fn [e]
+           (let [sha (sha-from-git-string git-content)]
+             (when-not (= "00000000" sha)
+               (object/raise this ::git-blame-clicked (sha-from-git-string git-content))))))
 
 (cmd/command {:command ::show-git-blame
               :desc "Git Blame: Show/update git blame for file"
@@ -48,27 +56,50 @@
 (behavior ::log-errors
           :triggers #{:proc.error}
           :reaction (fn [this & args]
-                      (.log js/console (clj->js args))))
+                      (object/remove-tags this #{::receiving-blame-output})
+                      (.log js/console (clj->js args))
+                      (notifos/done-working)))
 
 (behavior ::on-proc-exit-add-git-blame
-          :triggers #{:proc.exit}
-          :reaction (fn [this data]
-                      (object/remove-tags this #{::receiving-blame-output})
-                      (let [current-gutters (set (js->clj (editor/option this "gutters")))
-                            gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
-                            git-lines (clojure.string/split-lines data)]
-                        (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
-                        (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
-                        (doall (map-indexed (fn [idx git-line]
-                                              (.setGutterMarker (editor/->cm-ed this)
-                                                                idx
-                                                                "GBlame-gutter"
-                                                                (gblame-gutter-marker git-line)))
-                                            git-lines))
-                        (object/raise this :refresh!)
-                        (object/add-tags this #{::git-blame-on}))))
+           :triggers #{:proc.exit}
+           :reaction (fn [this data]
+                       (object/remove-tags this #{::receiving-blame-output})
+                       (let [current-gutters (set (js->clj (editor/option this "gutters")))
+                             gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
+                             git-lines (clojure.string/split-lines data)]
+                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
+                         (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
+                         (doall (map-indexed (fn [idx git-line]
+                                               (.setGutterMarker (editor/->cm-ed this)
+                                                                 idx
+                                                                 "GBlame-gutter"
+                                                                 (gblame-gutter-marker this git-line)))
+                                             git-lines))
+                         (object/raise this :refresh!)
+                         (object/add-tags this #{::git-blame-on})
+                         (notifos/done-working))))
 
-(object/tag-behaviors ::git-blame-on #{::remove-git-blame})
+(defn open-diff [sha path line]
+  (let [new-ed (pool/create {:line-separator "\n", :name "Diff"})]
+    (object/add-behavior! new-ed :lt.objs.editor/read-only)
+    (pool/set-syntax-by-path new-ed "foo.diff")
+    (tabs/add! new-ed)
+    (tabs/active! new-ed)
+    (exec (str "git show --no-color " sha " " path)
+          (clj->js {"cwd" (lt.objs.files/parent path)})
+          (fn [err stdout stderr]
+            (if err
+              (.log js/console #js [err stderr])
+              (editor/set-val new-ed stdout))))))
+
+(object/tag-behaviors ::git-blame-on #{::remove-git-blame ::open-git-diff})
+(behavior ::open-git-diff
+          :triggers #{::git-blame-clicked}
+          :reaction (fn [this sha]
+                      (let [path (-> @this :info :path)
+                            line (editor/line this)]
+                        (open-diff sha path line))))
+
 (behavior ::remove-git-blame
           :triggers #{::remove-git-blame}
           :reaction (fn [this]
@@ -99,6 +130,5 @@
                              (object/raise return-obj :proc.exit stdout stderr))))
         proc-input (.-stdin child-proc)
         chunked (partition-all 100 content)]
-    (write-with-nodejs true chunked proc-input))
-  (notifos/done-working))
+    (write-with-nodejs true chunked proc-input)))
 
