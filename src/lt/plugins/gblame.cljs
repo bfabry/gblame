@@ -67,14 +67,16 @@
                        (let [current-gutters (set (js->clj (editor/option this "gutters")))
                              gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
                              git-lines (clojure.string/split-lines data)]
-                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
-                         (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
-                         (doall (map-indexed (fn [idx git-line]
-                                               (.setGutterMarker (editor/->cm-ed this)
-                                                                 idx
-                                                                 "GBlame-gutter"
-                                                                 (gblame-gutter-marker this git-line)))
-                                             git-lines))
+                         (editor/operation this
+                                           (fn []
+                                             (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
+                                             (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
+                                             (doall (map-indexed (fn [idx git-line]
+                                                                   (.setGutterMarker (editor/->cm-ed this)
+                                                                                     idx
+                                                                                     "GBlame-gutter"
+                                                                                     (gblame-gutter-marker this git-line)))
+                                                                 git-lines))))
                          (object/raise this :refresh!)
                          (object/add-tags this #{::git-blame-on})
                          (notifos/done-working))))
