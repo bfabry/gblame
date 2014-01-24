@@ -1,4 +1,4 @@
-gblame
+GBlame
 ======
 
 Git blame implementation for light table

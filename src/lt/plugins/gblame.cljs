@@ -10,8 +10,8 @@
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def exec (.-exec (js/require "child_process")))
-(declare write-with-nodejs)
 (declare run-git-blame-on-path-and-content)
+(declare open-diff)
 
 (object/object* ::git-blame-settings
                 :width 300)
@@ -66,31 +66,17 @@
                        (object/remove-tags this #{::receiving-blame-output})
                        (let [current-gutters (set (js->clj (editor/option this "gutters")))
                              gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
-                             git-lines (clojure.string/split-lines data)]
+                             git-lines (clojure.string/split-lines data)
+                             gutter-markers (map #(gblame-gutter-marker this %) git-lines)
+                             ed (editor/->cm-ed this)]
                          (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
                          (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
-                         (doall (map-indexed (fn [idx git-line]
-                                               (.setGutterMarker (editor/->cm-ed this)
-                                                                 idx
-                                                                 "GBlame-gutter"
-                                                                 (gblame-gutter-marker this git-line)))
-                                             git-lines))
+                         (doall (map-indexed (fn [idx gutter-marker]
+                                               (.setGutterMarker ed idx "GBlame-gutter" gutter-marker))
+                                             gutter-markers))
                          (object/raise this :refresh!)
                          (object/add-tags this #{::git-blame-on})
                          (notifos/done-working))))
-
-(defn open-diff [sha path line]
-  (let [new-ed (pool/create {:line-separator "\n", :name "Diff"})]
-    (object/add-behavior! new-ed :lt.objs.editor/read-only)
-    (pool/set-syntax-by-path new-ed "foo.diff")
-    (tabs/add! new-ed)
-    (tabs/active! new-ed)
-    (exec (str "git show --no-color " sha " " path)
-          (clj->js {"cwd" (lt.objs.files/parent path)})
-          (fn [err stdout stderr]
-            (if err
-              (.log js/console #js [err stderr])
-              (editor/set-val new-ed stdout))))))
 
 (object/tag-behaviors ::git-blame-on #{::remove-git-blame ::open-git-diff})
 (behavior ::open-git-diff
@@ -122,3 +108,15 @@
         proc-input (.-stdin child-proc)]
     (.end proc-input content)))
 
+(defn open-diff [sha path line]
+  (let [new-ed (pool/create {:line-separator "\n", :name "Diff"})]
+    (object/add-behavior! new-ed :lt.objs.editor/read-only)
+    (pool/set-syntax-by-path new-ed "foo.diff")
+    (tabs/add! new-ed)
+    (tabs/active! new-ed)
+    (exec (str "git show --no-color " sha " " path)
+          (clj->js {"cwd" (lt.objs.files/parent path)})
+          (fn [err stdout stderr]
+            (if err
+              (.log js/console #js [err stderr])
+              (editor/set-val new-ed stdout))))))
