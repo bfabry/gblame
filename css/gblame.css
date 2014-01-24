@@ -1,2 +1,3 @@
 .cm-positive { color: var(secondary-accent-fg); }
 .cm-negative { color: var(error-fg); }
+.GBlame-gutter-marker:hover {background: var(highlight-bg); }
