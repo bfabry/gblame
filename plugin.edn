@@ -1,6 +1,6 @@
 {:name "GBlame"
  :author "Beau Fabry"
- :version "0.0.3"
+ :version "0.0.4"
  :source "https://github.com/bfabry/gblame"
  :desc "Simple implementation of git blame for light table. Assumes you have git installed"
  :behaviors "gblame.behaviors"}
