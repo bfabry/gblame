@@ -3,6 +3,7 @@
             [lt.objs.command :as cmd]
             [lt.util.dom :as dom]
             [lt.objs.editor :as editor]
+            [lt.objs.files :as files]
             [lt.objs.proc :as proc]
             [lt.objs.notifos :as notifos]
             [lt.objs.tabs :as tabs]
@@ -61,17 +62,15 @@
               :exec (fn []
                       (object/raise (pool/last-active) ::remove-git-blame))})
 
-(object/tag-behaviors ::receiving-blame-output #{::log-errors ::on-proc-exit-add-git-blame})
-
 (behavior ::log-errors
-          :triggers #{:proc.error}
+          :triggers #{::blame-failed}
           :reaction (fn [this & args]
                       (object/remove-tags this #{::receiving-blame-output})
                       (.log js/console (clj->js args))
                       (notifos/done-working)))
 
-(behavior ::on-proc-exit-add-git-blame
-           :triggers #{:proc.exit}
+(behavior ::show-blame-data
+           :triggers #{::show-blame-data}
            :reaction (fn [this data]
                        (object/remove-tags this #{::receiving-blame-output})
                        (let [current-gutters (set (js->clj (editor/option this "gutters")))
@@ -88,7 +87,6 @@
                          (object/add-tags this #{::git-blame-on})
                          (notifos/done-working))))
 
-(object/tag-behaviors ::git-blame-on #{::remove-git-blame ::open-git-diff})
 (behavior ::open-git-diff
           :triggers #{::git-blame-clicked}
           :reaction (fn [this sha line]
@@ -109,11 +107,11 @@
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
   (let [child-proc (exec (str "git blame -n --date short --contents - " path)
-                         (clj->js {"cwd" (lt.objs.files/parent path)})
+                         (clj->js {"cwd" (files/parent path)})
                          (fn [err stdout stderr]
                            (if err
-                             (object/raise return-obj :proc.error err stdout stderr)
-                             (object/raise return-obj :proc.exit stdout stderr))))
+                             (object/raise return-obj ::blame-failed err stdout stderr)
+                             (object/raise return-obj ::show-blame-data stdout stderr))))
         proc-input (.-stdin child-proc)]
     (.end proc-input content)))
 
@@ -140,13 +138,13 @@
     (nth line-mappings line-offset-into-hunk)))
 
 (defn open-diff [sha path line]
-  (let [new-ed (pool/create {:line-separator "\n", :name "Diff"})]
-    (object/add-behavior! new-ed :lt.objs.editor/read-only)
+  (let [new-ed (pool/create {:line-separator "\n", :name (str (files/basename path) " @ " sha)})]
+    (object/add-tags new-ed #{:editor.read-only})
     (pool/set-syntax-by-path new-ed "foo.diff")
     (tabs/add! new-ed)
     (tabs/active! new-ed)
     (exec (str "git show --no-color " sha " " path)
-          (clj->js {"cwd" (lt.objs.files/parent path)})
+          (clj->js {"cwd" (files/parent path)})
           (fn [err stdout stderr]
             (if err
               (.log js/console #js [err stderr])
