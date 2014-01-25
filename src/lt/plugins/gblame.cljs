@@ -31,14 +31,24 @@
 (defn sha-from-git-string [git-string]
   (clojure.string/replace (clojure.string/join (take 8 git-string)) "^" ""))
 
+(defn line-from-git-string [git-string]
+  (int (second (re-matches #"^.[a-f0-9]{7}\s+(\d+)\s+.*$" git-string))))
+
 (defui gblame-gutter-marker [this git-content]
-  [:div.GBlame-gutter-marker
-   {:style (str "width: " (:width @blame-settings) "px; white-space: nowrap; overflow: hidden;") }
-   (clojure.string/replace-first git-content #"\s*\d+\).*$" ")")]
+  (let [display-string (-> git-content
+                           (clojure.string/replace-first #"\s*\d+\).*$" ")")
+                           (clojure.string/replace-first #"^(.[a-z0-9]+)\s+\d+\s+" "$1 "))]
+    [:div.GBlame-gutter-marker
+     {:style (str "width: " (:width @blame-settings) "px; white-space: nowrap; overflow: hidden;") }
+     display-string])
   :click (fn [e]
-           (let [sha (sha-from-git-string git-content)]
+           (let [sha (sha-from-git-string git-content)
+                 line (line-from-git-string git-content)]
              (when-not (= "00000000" sha)
-               (object/raise this ::git-blame-clicked (sha-from-git-string git-content))))))
+               (object/raise this
+                             ::git-blame-clicked
+                             (sha-from-git-string git-content)
+                             (line-from-git-string git-content))))))
 
 (cmd/command {:command ::show-git-blame
               :desc "Git Blame: Show/update git blame for file"
@@ -81,9 +91,8 @@
 (object/tag-behaviors ::git-blame-on #{::remove-git-blame ::open-git-diff})
 (behavior ::open-git-diff
           :triggers #{::git-blame-clicked}
-          :reaction (fn [this sha]
-                      (let [path (-> @this :info :path)
-                            line (editor/line this)]
+          :reaction (fn [this sha line]
+                      (let [path (-> @this :info :path)]
                         (open-diff sha path line))))
 
 (behavior ::remove-git-blame
@@ -99,7 +108,7 @@
   (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
-  (let [child-proc (exec (str "git blame --date short --contents - " path)
+  (let [child-proc (exec (str "git blame -n --date short --contents - " path)
                          (clj->js {"cwd" (lt.objs.files/parent path)})
                          (fn [err stdout stderr]
                            (if err
@@ -107,6 +116,28 @@
                              (object/raise return-obj :proc.exit stdout stderr))))
         proc-input (.-stdin child-proc)]
     (.end proc-input content)))
+
+(defn hunk-spec [line]
+  (map int (rest (re-matches #"@@ -\d+,\d+ \+(\d+),(\d+) @@" line))))
+
+(defn diff-line-mappings [diff]
+  (let [lines (map-indexed (fn [diff-line-no line] [line diff-line-no]) (clojure.string/split-lines diff))]
+    (reduce (fn [mappings [line diff-line-no]]
+              (let [[hunk hunk-lines] (last mappings)]
+                (if (re-find #"^@@" line)
+                  (conj mappings [(hunk-spec line) []])
+                  (conj (pop mappings) [hunk (conj hunk-lines diff-line-no)]))))
+            [[[0 0] []]]
+            lines)))
+
+(defn src-line-to-diff-line [line mappings]
+  (let [mapping (first (filter (fn [[[start-hunk num-lines] _]]
+                                 (and (>= line start-hunk) (<= line (+ start-hunk num-lines))))
+                               mappings))
+        [[start-hunk num-lines] line-mappings] mapping
+        line-offset-into-hunk (- line start-hunk)]
+
+    (nth line-mappings line-offset-into-hunk)))
 
 (defn open-diff [sha path line]
   (let [new-ed (pool/create {:line-separator "\n", :name "Diff"})]
@@ -119,4 +150,9 @@
           (fn [err stdout stderr]
             (if err
               (.log js/console #js [err stderr])
-              (editor/set-val new-ed stdout))))))
+              (do
+                (editor/set-val new-ed stdout)
+                (let [mappings (diff-line-mappings stdout)
+                      diff-line (src-line-to-diff-line line mappings)]
+                  (editor/move-cursor new-ed {:line diff-line, :ch 0})
+                  (editor/center-cursor new-ed))))))))
