@@ -78,6 +78,8 @@
                              git-lines (clojure.string/split-lines data)
                              gutter-markers (map #(gblame-gutter-marker this %) git-lines)
                              ed (editor/->cm-ed this)]
+                         (editor/operation this
+                                           (fn []
                          (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
                          (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
                          (doall (map-indexed (fn [idx gutter-marker]
@@ -85,7 +87,7 @@
                                              gutter-markers))
                          (object/raise this :refresh!)
                          (object/add-tags this #{::git-blame-on})
-                         (notifos/done-working))))
+                         (notifos/done-working))))))
 
 (behavior ::open-git-diff
           :triggers #{::git-blame-clicked}
