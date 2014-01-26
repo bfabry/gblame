@@ -3,6 +3,7 @@
             [lt.objs.command :as cmd]
             [lt.util.dom :as dom]
             [lt.objs.editor :as editor]
+            [lt.objs.document :as document]
             [lt.objs.files :as files]
             [lt.objs.proc :as proc]
             [lt.objs.notifos :as notifos]
@@ -13,6 +14,7 @@
 (def exec (.-exec (js/require "child_process")))
 (declare run-git-blame-on-path-and-content)
 (declare open-diff)
+
 
 (object/object* ::git-blame-settings
                 :width 300)
@@ -68,24 +70,38 @@
                       (object/remove-tags this #{::receiving-blame-output})
                       (.log js/console (clj->js args))
                       (notifos/done-working)))
+(defn add-gutter [this]
+  (let [ed (editor/->cm-ed this)
+        current-gutters (set (js->clj (editor/option this "gutters")))
+        gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))]
+    (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
+    (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})))
+
+
+(defn add-gutter-markers [this data]
+  (let [git-lines (clojure.string/split-lines data)
+        gutter-markers (map #(gblame-gutter-marker this %) git-lines)]
+  (editor/operation
+   this
+   (fn []
+     (add-gutter this)
+     (doall
+      (map-indexed
+       (fn [line-no gutter-marker]
+         (let [lh (editor/line-handle this line-no)]
+           (if-not (.-gutterMarkers lh)
+             (aset lh "gutterMarkers" #js {}))
+
+           (aset (.-gutterMarkers lh) "GBlame-gutter" gutter-marker)))
+       gutter-markers))))))
 
 (behavior ::show-blame-data
            :triggers #{::show-blame-data}
            :reaction (fn [this data]
                        (object/remove-tags this #{::receiving-blame-output})
-                       (let [current-gutters (set (js->clj (editor/option this "gutters")))
-                             gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
-                             git-lines (clojure.string/split-lines data)
-                             gutter-markers (map #(gblame-gutter-marker this %) git-lines)
-                             ed (editor/->cm-ed this)]
-                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
-                         (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
-                         (doall (map-indexed (fn [idx gutter-marker]
-                                               (.setGutterMarker ed idx "GBlame-gutter" gutter-marker))
-                                             gutter-markers))
-                         (object/raise this :refresh!)
-                         (object/add-tags this #{::git-blame-on})
-                         (notifos/done-working))))
+                       (add-gutter-markers this data)
+                       (object/add-tags this #{::git-blame-on})
+                       (notifos/done-working)))
 
 (behavior ::open-git-diff
           :triggers #{::git-blame-clicked}
