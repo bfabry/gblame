@@ -62,6 +62,11 @@
               :exec (fn []
                       (object/raise (pool/last-active) ::remove-git-blame))})
 
+(cmd/command {:command ::toggle-git-blame
+              :desc "Git Blame: Toggle"
+              :exec (fn []
+                      (object/raise (pool/last-active) ::toggle-git-blame))})
+
 (behavior ::log-errors
           :triggers #{::blame-failed}
           :reaction (fn [this & args]
@@ -104,11 +109,21 @@
                       (editor/set-options this {:gutters (clj->js (remove #{"GBlame-gutter"} (js->clj (editor/option this "gutters"))))})
                       (object/raise this :refresh!)))
 
+(behavior ::toggle-git-blame
+          :triggers #{::toggle-git-blame}
+          :reaction (fn [this]
+                      (if (object/has-tag? this ::git-blame-on)
+                        (object/raise this ::remove-git-blame)
+                        (let [active-ed (pool/last-active)]
+                          (run-git-blame-on-path-and-content (-> @active-ed :info :path) (editor/->val active-ed) active-ed))
+                        )
+                      ))
+
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
-  (let [child-proc (exec (str "git blame -n --date short --contents - " path)
+  (let [child-proc (exec (str "git blame -n --date short --contents - " "'"path"'")
                          (clj->js {"cwd" (files/parent path)})
                          (fn [err stdout stderr]
                            (if err
@@ -145,7 +160,7 @@
     (pool/set-syntax-by-path new-ed "foo.diff")
     (tabs/add! new-ed)
     (tabs/active! new-ed)
-    (exec (str "git show --no-color " sha " " path)
+    (exec (str "git show --no-color " sha " " "'"path"'")
           (clj->js {"cwd" (files/parent path)})
           (fn [err stdout stderr]
             (if err
