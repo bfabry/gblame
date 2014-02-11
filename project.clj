@@ -1,2 +1,2 @@
-(defproject gblame "0.0.1"
+(defproject gblame "0.0.6"
   :dependencies [[org.clojure/clojure "1.5.1"]])
