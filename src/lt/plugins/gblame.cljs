@@ -62,6 +62,11 @@
               :exec (fn []
                       (object/raise (pool/last-active) ::remove-git-blame))})
 
+(cmd/command {:command ::toggle-git-blame
+              :desc "Git Blame: Toggle"
+              :exec (fn []
+                      (object/raise (pool/last-active) ::toggle-git-blame))})
+
 (behavior ::log-errors
           :triggers #{::blame-failed}
           :reaction (fn [this & args]
@@ -103,6 +108,16 @@
                       (dom/remove :div.Gblame-gutter (object/->content this))
                       (editor/set-options this {:gutters (clj->js (remove #{"GBlame-gutter"} (js->clj (editor/option this "gutters"))))})
                       (object/raise this :refresh!)))
+
+(behavior ::toggle-git-blame
+          :triggers #{::toggle-git-blame}
+          :reaction (fn [this]
+                      (if (object/has-tag? this ::git-blame-on)
+                        (object/raise this ::remove-git-blame)
+                        (let [active-ed (pool/last-active)]
+                          (run-git-blame-on-path-and-content (-> @active-ed :info :path) (editor/->val active-ed) active-ed))
+                        )
+                      ))
 
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (notifos/working "Getting git blame")
