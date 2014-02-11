@@ -108,7 +108,7 @@
   (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
-  (let [child-proc (exec (str "git blame -n --date short --contents - " path)
+  (let [child-proc (exec (str "git blame -n --date short --contents - " "'"path"'")
                          (clj->js {"cwd" (files/parent path)})
                          (fn [err stdout stderr]
                            (if err
@@ -145,7 +145,7 @@
     (pool/set-syntax-by-path new-ed "foo.diff")
     (tabs/add! new-ed)
     (tabs/active! new-ed)
-    (exec (str "git show --no-color " sha " " path)
+    (exec (str "git show --no-color " sha " " "'"path"'")
           (clj->js {"cwd" (files/parent path)})
           (fn [err stdout stderr]
             (if err
