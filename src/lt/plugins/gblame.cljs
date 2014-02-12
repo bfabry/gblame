@@ -72,7 +72,7 @@
           :reaction (fn [this & args]
                       (object/remove-tags this #{::receiving-blame-output})
                       (.log js/console (clj->js args))
-                      (notifos/done-working)))
+                      (notifos/done-working (str "GBlame: " (first args)))))
 
 (behavior ::show-blame-data
            :triggers #{::show-blame-data}
@@ -127,7 +127,7 @@
                          (clj->js {"cwd" (files/parent path)})
                          (fn [err stdout stderr]
                            (if err
-                             (object/raise return-obj ::blame-failed err stdout stderr)
+                             (object/raise return-obj ::blame-failed stderr err stdout stderr)
                              (object/raise return-obj ::show-blame-data stdout stderr))))
         proc-input (.-stdin child-proc)]
     (.end proc-input content)))
