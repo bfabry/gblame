@@ -38,7 +38,7 @@
 (defui gblame-gutter-marker [this git-content]
   (let [display-string (-> git-content
                            (clojure.string/replace-first #"\s*\d+\).*$" ")")
-                           (clojure.string/replace-first #"^(.[a-z0-9]+)\s+\d+\s+" "$1 "))]
+                           (clojure.string/replace-first #"^(.[a-z0-9]+)\s+.*?\d+\s+" "$1 "))]
     [:div.GBlame-gutter-marker
      {:style (str "width: " (:width @blame-settings) "px; white-space: nowrap; overflow: hidden;") }
      display-string])
