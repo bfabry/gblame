@@ -13,3 +13,10 @@ Usage:
 ======
 There's a command for showing/updating the blame display, and another for closing it. Can't get much simpler :-)
 Once you have a the blame view to the left, clicking on one will open a diff for that file for that commit.
+
+
+Changes
+=======
+0.0.7:
+ * Display and follow renames correctly (Sean Caffery)
+ * Play nicely with other gutter plugins (Sean Caffery)
