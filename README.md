@@ -17,6 +17,9 @@ Once you have a the blame view to the left, clicking on one will open a diff for
 
 Changes
 =======
+0.0.8:
+ * Use the new LT gutters api so work with other gutter plugins better
+ * Run the git blame in the background
 0.0.7:
  * Display and follow renames correctly (Sean Caffery)
  * Play nicely with other gutter plugins (Sean Caffery)
