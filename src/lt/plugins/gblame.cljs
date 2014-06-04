@@ -8,14 +8,14 @@
             [lt.objs.notifos :as notifos]
             [lt.objs.tabs :as tabs]
             [lt.objs.editor.pool :as pool])
-  (:require-macros [lt.macros :refer [behavior defui]]))
+  (:require-macros [lt.macros :refer [behavior defui background]]))
 
 (def exec (.-exec (js/require "child_process")))
 (declare run-git-blame-on-path-and-content)
 (declare open-diff)
 
 (object/object* ::git-blame-settings
-                :width 300)
+                :width 200)
 
 (def blame-settings (object/create ::git-blame-settings))
 
@@ -68,30 +68,28 @@
                       (object/raise (pool/last-active) ::toggle-git-blame))})
 
 (behavior ::log-errors
-          :triggers #{::blame-failed}
+          :triggers #{:blame-failed}
           :reaction (fn [this message]
                       (object/remove-tags this #{::receiving-blame-output})
                       (notifos/done-working (str "GBlame: " message))))
 
 (behavior ::show-blame-data
-           :triggers #{::show-blame-data}
+           :triggers #{:show-blame-data}
            :reaction (fn [this data]
                        (object/remove-tags this #{::receiving-blame-output})
-                       (let [current-gutters (set (js->clj (editor/option this "gutters")))
-                             gutter-div (dom/$ :div.CodeMirror-gutters (object/->content this))
-                             git-lines (clojure.string/split-lines data)
+                       (let [git-lines (clojure.string/split-lines data)
                              gutter-markers (map #(gblame-gutter-marker this %) git-lines)
                              ed (editor/->cm-ed this)]
-                         (editor/operation this
-                                           (fn []
-                         (editor/set-options this {:gutters (clj->js (conj current-gutters "GBlame-gutter"))})
-                         (dom/set-css (dom/$ :div.Gblame-gutter gutter-div) {"width" (str (:width @blame-settings) "px")})
-                         (doall (map-indexed (fn [idx gutter-marker]
-                                               (.setGutterMarker ed idx "GBlame-gutter" gutter-marker))
-                                             gutter-markers))
-                         (object/raise this :refresh!)
-                         (object/add-tags this #{::git-blame-on})
-                         (notifos/done-working))))))
+                         (editor/operation
+                          this
+                          (fn []
+                            (editor/add-gutter this "GBlame-gutter" (:width @blame-settings))
+                            (doall (map-indexed (fn [idx gutter-marker]
+                                                  (.setGutterMarker ed idx "GBlame-gutter" gutter-marker))
+                                                gutter-markers))
+                            (object/add-tags this #{::git-blame-on})
+                            (notifos/done-working)))
+                         (object/raise this :refresh!))))
 
 (behavior ::open-git-diff
           :triggers #{::git-blame-clicked}
@@ -103,10 +101,7 @@
           :triggers #{::remove-git-blame}
           :reaction (fn [this]
                       (object/remove-tags this #{::git-blame-on})
-                      (.clearGutter (editor/->cm-ed this) "GBlame-gutter")
-                      (dom/remove :div.Gblame-gutter (object/->content this))
-                      (editor/set-options this {:gutters (clj->js (remove #{"GBlame-gutter"} (js->clj (editor/option this "gutters"))))})
-                      (object/raise this :refresh!)))
+                      (editor/remove-gutter this "GBlame-gutter")))
 
 (behavior ::toggle-git-blame
           :triggers #{::toggle-git-blame}
@@ -118,18 +113,24 @@
                         )
                       ))
 
+(def run-background-blame
+  (background
+   (fn [return-obj cwd path content]
+     (let [child-proc (.exec (js/require "child_process")
+                             (str "git blame -n --date short --contents - " "'"path"'")
+                             (clj->js {"cwd" cwd})
+                             (fn [err stdout stderr]
+                               (if err
+                                 (raise return-obj :blame-failed stderr)
+                                 (raise return-obj :show-blame-data stdout))))
+           proc-input (.-stdin child-proc)]
+       (.end proc-input content)))))
+
 (defn run-git-blame-on-path-and-content [path content return-obj]
   (notifos/working "Getting git blame")
   (object/merge! return-obj {::git-blame-output ""})
   (object/add-tags return-obj #{::receiving-blame-output})
-  (let [child-proc (exec (str "git blame -n --date short --contents - " "'"path"'")
-                         (clj->js {"cwd" (files/parent path)})
-                         (fn [err stdout stderr]
-                           (if err
-                             (object/raise return-obj ::blame-failed stderr)
-                             (object/raise return-obj ::show-blame-data stdout stderr))))
-        proc-input (.-stdin child-proc)]
-    (.end proc-input content)))
+  (run-background-blame return-obj (files/parent path) path content))
 
 (defn hunk-spec [line]
   (map int (rest (re-matches #"@@ -\d+,\d+ \+(\d+),(\d+) @@" line))))
@@ -153,20 +154,22 @@
 
     (nth line-mappings line-offset-into-hunk)))
 
+
+
 (defn open-diff [sha path line]
-  (let [new-ed (pool/create {:line-separator "\n", :name (str (files/basename path) " @ " sha)})]
-    (object/add-tags new-ed #{:editor.read-only})
-    (pool/set-syntax-by-path new-ed "foo.diff")
-    (tabs/add! new-ed)
-    (tabs/active! new-ed)
-    (exec (str "git show --no-color " sha " " "'"path"'")
-          (clj->js {"cwd" (files/parent path)})
-          (fn [err stdout stderr]
-            (if err
-              (.log js/console #js [err stderr])
-              (do
-                (editor/set-val new-ed stdout)
-                (let [mappings (diff-line-mappings stdout)
-                      diff-line (src-line-to-diff-line line mappings)]
-                  (editor/move-cursor new-ed {:line diff-line, :ch 0})
-                  (editor/center-cursor new-ed))))))))
+                (let [new-ed (pool/create {:line-separator "\n", :name (str (files/basename path) " @ " sha)})]
+                  (object/add-tags new-ed #{:editor.read-only})
+                  (pool/set-syntax-by-path new-ed "foo.diff")
+                  (tabs/add! new-ed)
+                  (tabs/active! new-ed)
+                  (exec (str "git show --no-color " sha " " "'"path"'")
+                        (clj->js {"cwd" (files/parent path)})
+                        (fn [err stdout stderr]
+                          (if err
+                            (.log js/console #js [err stderr])
+                            (do
+                              (editor/set-val new-ed stdout)
+                              (let [mappings (diff-line-mappings stdout)
+                                    diff-line (src-line-to-diff-line line mappings)]
+                                (editor/move-cursor new-ed {:line diff-line, :ch 0})
+                                (editor/center-cursor new-ed))))))))
